@@ -166,57 +166,65 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 }
 
 func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
-	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-
-	cmd := exec.Command("gh", "search", "prs",
-		fmt.Sprintf("author:%s created:>=%s", c.username, since),
-		"--json", "number,title,url,repository,state,createdAt,updatedAt",
-		"--limit", "50")
-
-	output, err := cmd.CombinedOutput()
+	// Get recent repos that might have PRs
+	repos, err := c.getRecentRepositories()
 	if err != nil {
-		// Check if it's just no results (which is ok)
-		if strings.Contains(string(output), "no pull requests found") {
-			return []PullRequest{}, nil
+		return nil, err
+	}
+	
+	var allPRs []PullRequest
+	cutoffDate := time.Now().AddDate(0, 0, -days)
+	
+	// Check each repo for recent PRs
+	for _, repo := range repos {
+		cmd := exec.Command("gh", "pr", "list",
+			"--repo", repo,
+			"--author", c.username,
+			"--state", "all",
+			"--json", "number,title,url,state,createdAt,updatedAt",
+			"--limit", "20")
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Skip repos with errors (might not have PR access)
+			continue
 		}
-		return nil, fmt.Errorf("failed to search pull requests: %v - output: %s", err, string(output))
+		
+		// Handle empty results
+		if len(output) == 0 || string(output) == "[]\n" || string(output) == "[]" {
+			continue
+		}
+		
+		var prs []struct {
+			Number    int       `json:"number"`
+			Title     string    `json:"title"`
+			URL       string    `json:"url"`
+			State     string    `json:"state"`
+			CreatedAt time.Time `json:"createdAt"`
+			UpdatedAt time.Time `json:"updatedAt"`
+		}
+		
+		if err := json.Unmarshal(output, &prs); err != nil {
+			continue
+		}
+		
+		// Filter by date and add to results
+		for _, pr := range prs {
+			if pr.CreatedAt.After(cutoffDate) || pr.UpdatedAt.After(cutoffDate) {
+				allPRs = append(allPRs, PullRequest{
+					Number:     pr.Number,
+					Title:      pr.Title,
+					URL:        pr.URL,
+					Repository: repo,
+					State:      pr.State,
+					CreatedAt:  pr.CreatedAt,
+					UpdatedAt:  pr.UpdatedAt,
+				})
+			}
+		}
 	}
-
-	var searchResults []struct {
-		Number     int    `json:"number"`
-		Title      string `json:"title"`
-		URL        string `json:"url"`
-		Repository struct {
-			NameWithOwner string `json:"nameWithOwner"`
-		} `json:"repository"`
-		State     string    `json:"state"`
-		CreatedAt time.Time `json:"createdAt"`
-		UpdatedAt time.Time `json:"updatedAt"`
-	}
-
-	// Handle empty results
-	if len(output) == 0 || string(output) == "[]\n" || string(output) == "[]" {
-		return []PullRequest{}, nil
-	}
-
-	if err := json.Unmarshal(output, &searchResults); err != nil {
-		return nil, fmt.Errorf("failed to parse pull request results: %v", err)
-	}
-
-	var prs []PullRequest
-	for _, sr := range searchResults {
-		prs = append(prs, PullRequest{
-			Number:     sr.Number,
-			Title:      sr.Title,
-			URL:        sr.URL,
-			Repository: sr.Repository.NameWithOwner,
-			State:      sr.State,
-			CreatedAt:  sr.CreatedAt,
-			UpdatedAt:  sr.UpdatedAt,
-		})
-	}
-
-	return prs, nil
+	
+	return allPRs, nil
 }
 
 func (c *Client) GetTodayPullRequests() ([]PullRequest, error) {
