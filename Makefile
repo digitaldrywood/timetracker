@@ -19,9 +19,11 @@ clean:
 	@rm -rf bin/
 	@go clean
 
-auth: build
+auth:
+	@echo "Building authentication tool..."
+	@go build -o bin/auth cmd/auth/main.go
 	@echo "Authenticating with Google Sheets..."
-	@./bin/$(BINARY_NAME)
+	@./bin/auth
 
 summary: build
 	@echo "Getting today's summary..."

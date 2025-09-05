@@ -17,7 +17,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-const tokenFile = "token.json"
+const tokenFile = ".local/token.json"
 
 type Auth struct {
 	config *oauth2.Config

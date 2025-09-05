@@ -173,9 +173,13 @@ func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
 		"--json", "number,title,url,repository,state,createdAt,updatedAt",
 		"--limit", "50")
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to search pull requests: %v", err)
+		// Check if it's just no results (which is ok)
+		if strings.Contains(string(output), "no pull requests found") {
+			return []PullRequest{}, nil
+		}
+		return nil, fmt.Errorf("failed to search pull requests: %v - output: %s", err, string(output))
 	}
 
 	var searchResults []struct {
@@ -188,6 +192,11 @@ func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
 		State     string    `json:"state"`
 		CreatedAt time.Time `json:"createdAt"`
 		UpdatedAt time.Time `json:"updatedAt"`
+	}
+
+	// Handle empty results
+	if len(output) == 0 || string(output) == "[]\n" || string(output) == "[]" {
+		return []PullRequest{}, nil
 	}
 
 	if err := json.Unmarshal(output, &searchResults); err != nil {
