@@ -36,6 +36,12 @@ func (t *Tracker) GetDailySummary() (*DailySummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commits: %v", err)
 	}
+	
+	// Also get local commits
+	localCommits, err := t.github.GetTodayLocalCommits()
+	if err == nil && len(localCommits) > 0 {
+		commits = append(commits, localCommits...)
+	}
 
 	prs, err := t.github.GetTodayPullRequests()
 	if err != nil {

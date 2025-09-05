@@ -74,7 +74,43 @@ func (c *Client) GetCommitsSince(since string) ([]Commit, error) {
 }
 
 func (c *Client) getRecentRepositories() ([]string, error) {
-	cmd := exec.Command("gh", "repo", "list", "--limit", "20", "--json", "nameWithOwner")
+	// Use GitHub events API to find ALL repos the user has been active in
+	cmd := exec.Command("gh", "api", fmt.Sprintf("users/%s/events/public", c.username), "--paginate", "--jq", ".[].repo.name")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to owned repos if events fail
+		return c.getOwnedRepositories()
+	}
+
+	// Parse unique repo names from events
+	repoMap := make(map[string]bool)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		repo := strings.TrimSpace(line)
+		if repo != "" {
+			repoMap[repo] = true
+		}
+	}
+	
+	// Also get owned repos to ensure we don't miss any
+	ownedRepos, err := c.getOwnedRepositories()
+	if err == nil {
+		for _, repo := range ownedRepos {
+			repoMap[repo] = true
+		}
+	}
+	
+	// Convert map to slice
+	var repoNames []string
+	for repo := range repoMap {
+		repoNames = append(repoNames, repo)
+	}
+
+	return repoNames, nil
+}
+
+func (c *Client) getOwnedRepositories() ([]string, error) {
+	cmd := exec.Command("gh", "repo", "list", "--limit", "100", "--json", "nameWithOwner")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %v", err)
@@ -97,19 +133,48 @@ func (c *Client) getRecentRepositories() ([]string, error) {
 }
 
 func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, error) {
+	// Try to get commits using gh repo view to find default branch
+	// Then use git log style command which is more reliable
+	cmd := exec.Command("gh", "repo", "view", repo, "--json", "defaultBranchRef")
+	branchOutput, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	
+	var branchInfo struct {
+		DefaultBranchRef struct {
+			Name string `json:"name"`
+		} `json:"defaultBranchRef"`
+	}
+	
+	if err := json.Unmarshal(branchOutput, &branchInfo); err != nil {
+		return nil, nil
+	}
+	
+	branch := branchInfo.DefaultBranchRef.Name
+	if branch == "" {
+		branch = "main" // fallback
+	}
+	
+	// Use gh api to get commits with the correct branch
 	query := fmt.Sprintf(`
 		query {
 			repository(owner: "%s", name: "%s") {
-				ref(qualifiedName: "refs/heads/main") {
+				ref(qualifiedName: "refs/heads/%s") {
 					target {
 						... on Commit {
-							history(first: 100, author: {emails: ["%s"]}, since: "%sT00:00:00Z") {
+							history(first: 100, since: "%sT00:00:00Z") {
 								edges {
 									node {
 										oid
 										message
 										url
 										authoredDate
+										author {
+											user {
+												login
+											}
+										}
 									}
 								}
 							}
@@ -118,9 +183,9 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 				}
 			}
 		}
-	`, strings.Split(repo, "/")[0], strings.Split(repo, "/")[1], c.username, since)
+	`, strings.Split(repo, "/")[0], strings.Split(repo, "/")[1], branch, since)
 
-	cmd := exec.Command("gh", "api", "graphql", "-f", fmt.Sprintf("query=%s", query))
+	cmd = exec.Command("gh", "api", "graphql", "-f", fmt.Sprintf("query=%s", query))
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, nil
@@ -138,6 +203,11 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 									Message      string    `json:"message"`
 									URL          string    `json:"url"`
 									AuthoredDate time.Time `json:"authoredDate"`
+									Author       struct {
+										User struct {
+											Login string `json:"login"`
+										} `json:"user"`
+									} `json:"author"`
 								} `json:"node"`
 							} `json:"edges"`
 						} `json:"history"`
@@ -153,13 +223,16 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 
 	var commits []Commit
 	for _, edge := range result.Data.Repository.Ref.Target.History.Edges {
-		commits = append(commits, Commit{
-			SHA:        edge.Node.OID,
-			Message:    edge.Node.Message,
-			URL:        edge.Node.URL,
-			Repository: repo,
-			AuthorDate: edge.Node.AuthoredDate,
-		})
+		// Filter by author to only include current user's commits
+		if edge.Node.Author.User.Login == c.username {
+			commits = append(commits, Commit{
+				SHA:        edge.Node.OID,
+				Message:    edge.Node.Message,
+				URL:        edge.Node.URL,
+				Repository: repo,
+				AuthorDate: edge.Node.AuthoredDate,
+			})
+		}
 	}
 
 	return commits, nil
