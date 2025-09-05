@@ -10,14 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digitaldrywood/timetracker/internal/config"
 	"github.com/digitaldrywood/timetracker/internal/github"
 	"github.com/digitaldrywood/timetracker/internal/google"
 	"github.com/digitaldrywood/timetracker/internal/tracker"
-)
-
-const (
-	credentialsPath = ".local/credentials.json"
-	spreadsheetID   = "14RvNPAyigKffw_Xn0blnOvE4hPNZK6vHkHa0k2wWVaA"
 )
 
 func main() {
@@ -29,7 +25,12 @@ func main() {
 	)
 	flag.Parse()
 
-	auth, err := google.NewAuth(credentialsPath)
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	auth, err := google.NewAuth(cfg.CredentialsPath, cfg.TokenPath, cfg.OAuthRedirectURL)
 	if err != nil {
 		log.Fatalf("Failed to create auth client: %v", err)
 	}
@@ -39,7 +40,7 @@ func main() {
 		log.Fatalf("Failed to get Sheets service: %v", err)
 	}
 
-	sheets := google.NewSheetsClient(service, spreadsheetID)
+	sheets := google.NewSheetsClient(service, cfg.SpreadsheetID)
 
 	gh, err := github.NewClient()
 	if err != nil {

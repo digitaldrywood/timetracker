@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -17,14 +18,13 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-const tokenFile = ".local/token.json"
-
 type Auth struct {
-	config *oauth2.Config
-	client *http.Client
+	config    *oauth2.Config
+	client    *http.Client
+	tokenPath string
 }
 
-func NewAuth(credentialsPath string) (*Auth, error) {
+func NewAuth(credentialsPath, tokenPath, redirectURL string) (*Auth, error) {
 	b, err := os.ReadFile(credentialsPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read client secret file: %v", err)
@@ -35,10 +35,13 @@ func NewAuth(credentialsPath string) (*Auth, error) {
 		return nil, fmt.Errorf("unable to parse client secret file to config: %v", err)
 	}
 
-	// Set redirect URL to local server
-	config.RedirectURL = "http://localhost:8080/callback"
+	// Set redirect URL from config
+	config.RedirectURL = redirectURL
 
-	return &Auth{config: config}, nil
+	return &Auth{
+		config:    config,
+		tokenPath: tokenPath,
+	}, nil
 }
 
 func (a *Auth) GetClient() (*http.Client, error) {
@@ -77,8 +80,18 @@ func (a *Auth) getTokenFromWeb() (*oauth2.Token, error) {
 	// Channel to receive the authorization code
 	codeChan := make(chan string)
 	
+	// Extract port from redirect URL
+	port := ":8080"
+	if strings.Contains(a.config.RedirectURL, "localhost:") {
+		parts := strings.Split(a.config.RedirectURL, ":")
+		if len(parts) >= 3 {
+			portPart := strings.Split(parts[2], "/")[0]
+			port = ":" + portPart
+		}
+	}
+	
 	// Start local server to handle OAuth callback
-	server := &http.Server{Addr: ":8080"}
+	server := &http.Server{Addr: port}
 	
 	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
@@ -135,7 +148,7 @@ func (a *Auth) getTokenFromWeb() (*oauth2.Token, error) {
 }
 
 func (a *Auth) tokenFromFile() (*oauth2.Token, error) {
-	f, err := os.Open(tokenFile)
+	f, err := os.Open(a.tokenPath)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +159,8 @@ func (a *Auth) tokenFromFile() (*oauth2.Token, error) {
 }
 
 func (a *Auth) saveToken(token *oauth2.Token) {
-	fmt.Printf("Saving credential file to: %s\n", tokenFile)
-	f, err := os.OpenFile(tokenFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	fmt.Printf("Saving credential file to: %s\n", a.tokenPath)
+	f, err := os.OpenFile(a.tokenPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatalf("Unable to cache oauth token: %v", err)
 	}

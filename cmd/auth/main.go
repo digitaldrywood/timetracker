@@ -4,19 +4,20 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/digitaldrywood/timetracker/internal/config"
 	"github.com/digitaldrywood/timetracker/internal/google"
-)
-
-const (
-	credentialsPath = ".local/credentials.json"
-	spreadsheetID   = "14RvNPAyigKffw_Xn0blnOvE4hPNZK6vHkHa0k2wWVaA"
 )
 
 func main() {
 	fmt.Println("=== Time Tracker Authentication ===")
 	fmt.Println()
 
-	auth, err := google.NewAuth(credentialsPath)
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	auth, err := google.NewAuth(cfg.CredentialsPath, cfg.TokenPath, cfg.OAuthRedirectURL)
 	if err != nil {
 		log.Fatalf("Failed to create auth client: %v", err)
 	}
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	// Test the connection by getting spreadsheet metadata
-	spreadsheet, err := service.Spreadsheets.Get(spreadsheetID).Do()
+	spreadsheet, err := service.Spreadsheets.Get(cfg.SpreadsheetID).Do()
 	if err != nil {
 		log.Fatalf("Failed to access spreadsheet: %v", err)
 	}

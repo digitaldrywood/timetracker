@@ -1,0 +1,14 @@
+# Time Tracker Environment Variables
+# Copy this to .envrc and update with your values
+
+# Google Sheets Configuration
+export TIMETRACKER_SPREADSHEET_ID="your-spreadsheet-id-here"
+export TIMETRACKER_CREDENTIALS_PATH=".local/credentials.json"
+export TIMETRACKER_TOKEN_PATH=".local/token.json"
+
+# OAuth2 Configuration
+export TIMETRACKER_OAUTH_PORT="8080"
+export TIMETRACKER_OAUTH_REDIRECT_URL="http://localhost:8080/callback"
+
+# Optional: Google Cloud Project ID (if needed)
+# export TIMETRACKER_PROJECT_ID="your-project-id"
