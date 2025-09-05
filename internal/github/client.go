@@ -13,21 +13,21 @@ type Client struct {
 }
 
 type Commit struct {
-	SHA         string
-	Message     string
-	URL         string
-	Repository  string
-	AuthorDate  time.Time
+	SHA        string
+	Message    string
+	URL        string
+	Repository string
+	AuthorDate time.Time
 }
 
 type PullRequest struct {
-	Number      int
-	Title       string
-	URL         string
-	Repository  string
-	State       string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Number     int
+	Title      string
+	URL        string
+	Repository string
+	State      string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func NewClient() (*Client, error) {
@@ -35,7 +35,7 @@ func NewClient() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current user: %v", err)
 	}
-	
+
 	return &Client{username: username}, nil
 }
 
@@ -45,7 +45,7 @@ func getCurrentUser() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get current user from gh: %v", err)
 	}
-	
+
 	return strings.TrimSpace(string(output)), nil
 }
 
@@ -59,9 +59,9 @@ func (c *Client) GetCommitsSince(since string) ([]Commit, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var allCommits []Commit
-	
+
 	for _, repo := range repos {
 		commits, err := c.getRepositoryCommits(repo, since)
 		if err != nil {
@@ -69,7 +69,7 @@ func (c *Client) GetCommitsSince(since string) ([]Commit, error) {
 		}
 		allCommits = append(allCommits, commits...)
 	}
-	
+
 	return allCommits, nil
 }
 
@@ -79,20 +79,20 @@ func (c *Client) getRecentRepositories() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %v", err)
 	}
-	
+
 	var repos []struct {
 		NameWithOwner string `json:"nameWithOwner"`
 	}
-	
+
 	if err := json.Unmarshal(output, &repos); err != nil {
 		return nil, fmt.Errorf("failed to parse repository list: %v", err)
 	}
-	
+
 	var repoNames []string
 	for _, r := range repos {
 		repoNames = append(repoNames, r.NameWithOwner)
 	}
-	
+
 	return repoNames, nil
 }
 
@@ -119,13 +119,13 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 			}
 		}
 	`, strings.Split(repo, "/")[0], strings.Split(repo, "/")[1], c.username, since)
-	
+
 	cmd := exec.Command("gh", "api", "graphql", "-f", fmt.Sprintf("query=%s", query))
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, nil
 	}
-	
+
 	var result struct {
 		Data struct {
 			Repository struct {
@@ -146,11 +146,11 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 			} `json:"repository"`
 		} `json:"data"`
 	}
-	
+
 	if err := json.Unmarshal(output, &result); err != nil {
 		return nil, nil
 	}
-	
+
 	var commits []Commit
 	for _, edge := range result.Data.Repository.Ref.Target.History.Edges {
 		commits = append(commits, Commit{
@@ -161,27 +161,27 @@ func (c *Client) getRepositoryCommits(repo string, since string) ([]Commit, erro
 			AuthorDate: edge.Node.AuthoredDate,
 		})
 	}
-	
+
 	return commits, nil
 }
 
 func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
 	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	
-	cmd := exec.Command("gh", "search", "prs", 
+
+	cmd := exec.Command("gh", "search", "prs",
 		fmt.Sprintf("author:%s created:>=%s", c.username, since),
 		"--json", "number,title,url,repository,state,createdAt,updatedAt",
 		"--limit", "50")
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to search pull requests: %v", err)
 	}
-	
+
 	var searchResults []struct {
-		Number     int       `json:"number"`
-		Title      string    `json:"title"`
-		URL        string    `json:"url"`
+		Number     int    `json:"number"`
+		Title      string `json:"title"`
+		URL        string `json:"url"`
 		Repository struct {
 			NameWithOwner string `json:"nameWithOwner"`
 		} `json:"repository"`
@@ -189,11 +189,11 @@ func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
 		CreatedAt time.Time `json:"createdAt"`
 		UpdatedAt time.Time `json:"updatedAt"`
 	}
-	
+
 	if err := json.Unmarshal(output, &searchResults); err != nil {
 		return nil, fmt.Errorf("failed to parse pull request results: %v", err)
 	}
-	
+
 	var prs []PullRequest
 	for _, sr := range searchResults {
 		prs = append(prs, PullRequest{
@@ -206,7 +206,7 @@ func (c *Client) GetRecentPullRequests(days int) ([]PullRequest, error) {
 			UpdatedAt:  sr.UpdatedAt,
 		})
 	}
-	
+
 	return prs, nil
 }
 
