@@ -1,7 +1,8 @@
-.PHONY: build run test clean auth summary week add suggest install lint vet fmt
+.PHONY: build run test clean auth summary week add suggest install lint vet fmt clients sync-clients
 
 BINARY_NAME=timetracker
 MAIN_PATH=cmd/timetracker/main.go
+CLIENTS_PATH=cmd/clients/main.go
 
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -40,6 +41,18 @@ add: build
 suggest: build
 	@echo "Getting suggested entries from GitHub activity..."
 	@./bin/$(BINARY_NAME) -suggest
+
+clients:
+	@echo "Building clients tool..."
+	@go build -o bin/clients $(CLIENTS_PATH)
+	@echo "Managing client mappings..."
+	@./bin/clients
+
+sync-clients:
+	@echo "Building clients tool..."
+	@go build -o bin/clients $(CLIENTS_PATH)
+	@echo "Syncing clients from spreadsheet..."
+	@./bin/clients -sync
 
 install:
 	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
